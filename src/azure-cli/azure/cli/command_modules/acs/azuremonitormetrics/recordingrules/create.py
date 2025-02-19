@@ -16,7 +16,16 @@ def get_recording_rules_template(cmd, azure_monitor_workspace_resource_id):
     url = f"{armendpoint}{azure_monitor_workspace_resource_id}/providers/microsoft.alertsManagement/alertRuleRecommendations?api-version={ALERTS_API}"
     r = send_raw_request(cmd.cli_ctx, "GET", url, headers=headers)
     data = json.loads(r.text)
-    return data['value']
+
+    # Filter the templates based on the conditions
+    filtered_templates = [
+        template for template in data['value']
+        if template.get("alertRuleType") == "Microsoft.AlertsManagement/prometheusRuleGroups"
+        and template.get("alertRuleProperties", {}).get("rules")
+        and all("record" in rule and "expression" in rule for rule in template["alertRuleProperties"]["rules"])
+    ]
+
+    return filtered_templates
 
 
 # pylint: disable=line-too-long
