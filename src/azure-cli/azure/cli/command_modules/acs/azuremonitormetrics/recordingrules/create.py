@@ -17,12 +17,17 @@ def get_recording_rules_template(cmd, azure_monitor_workspace_resource_id):
     r = send_raw_request(cmd.cli_ctx, "GET", url, headers=headers)
     data = json.loads(r.text)
 
-    # Filter the templates based on the conditions
+    # Safely filter the templates
     filtered_templates = [
-        template for template in data['value']
-        if template.get("alertRuleType") == "Microsoft.AlertsManagement/prometheusRuleGroups"
-        and template.get("alertRuleProperties", {}).get("rules")
-        and all("record" in rule and "expression" in rule for rule in template["alertRuleProperties"]["rules"])
+        template for template in data.get('value', [])
+        if template.get("properties", {}).get("alertRuleType") == "Microsoft.AlertsManagement/prometheusRuleGroups"
+        and isinstance(template.get("properties", {}).get("rulesArmTemplate", {}).get("resources"), list)
+        and all(
+            isinstance(rule, dict) and "record" in rule and "expression" in rule
+            for resource in template["properties"]["rulesArmTemplate"]["resources"]
+            if resource.get("type") == "Microsoft.AlertsManagement/prometheusRuleGroups"
+            for rule in resource.get("properties", {}).get("rules", [])
+        )
     ]
 
     return filtered_templates
