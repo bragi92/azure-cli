@@ -534,6 +534,12 @@ parameters:
   - name: --enable-windows-recording-rules
     type: bool
     short-summary: Enable Windows Recording Rules when enabling the Azure Monitor Metrics addon
+  - name: --enable-control-plane-metrics
+    type: bool
+    short-summary: Enable collection of control plane metrics for the Azure Managed Prometheus addon. Configures collection of operational runtime metrics from managed control plane components (kube-apiserver, etcd, etc). See aka.ms/aks/controlplane-metrics for details. Must be used with --enable-azure-monitor-metrics.
+  - name: --disable-control-plane-metrics
+    type: bool
+    short-summary: Disable collection of control plane metrics for the Azure Managed Prometheus addon.
   - name: --nodepool-taints
     type: string
     short-summary: The node taints for all node pool.
@@ -1063,6 +1069,12 @@ parameters:
   - name: --disable-azure-monitor-metrics
     type: bool
     short-summary: Disable Azure Monitor Metrics Profile. This will delete all DCRA's associated with the cluster, any linked DCRs with the data stream = prometheus-stream and the recording rule groups created by the addon for this AKS cluster.
+  - name: --enable-control-plane-metrics
+    type: bool
+    short-summary: Enable collection of control plane metrics for the Azure Managed Prometheus addon. Configures collection of operational runtime metrics from managed control plane components (kube-apiserver, etcd, etc). See aka.ms/aks/controlplane-metrics for details.
+  - name: --disable-control-plane-metrics
+    type: bool
+    short-summary: Disable collection of control plane metrics for the Azure Managed Prometheus addon.
   - name: --nodepool-taints
     type: string
     short-summary: The node taints for all node pool.

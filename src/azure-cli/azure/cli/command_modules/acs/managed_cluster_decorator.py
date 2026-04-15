@@ -5762,6 +5762,91 @@ class AKSManagedClusterContext(BaseAKSContext):
         """
         return self._get_disable_azure_monitor_metrics(enable_validation=True)
 
+    def _get_enable_control_plane_metrics(self, enable_validation: bool = False) -> bool:
+        """Internal function to obtain the value of enable_control_plane_metrics.
+
+        :return: bool
+        """
+        enable_control_plane_metrics = self.raw_param.get("enable_control_plane_metrics")
+        if enable_validation:
+            if enable_control_plane_metrics and self._get_disable_control_plane_metrics(False):
+                raise MutuallyExclusiveArgumentError(
+                    "Cannot specify --enable-control-plane-metrics and "
+                    "--disable-control-plane-metrics at the same time"
+                )
+            if enable_control_plane_metrics:
+                # In create mode, --enable-azure-monitor-metrics must be specified
+                if self.decorator_mode == DecoratorMode.CREATE:
+                    if not self._get_enable_azure_monitor_metrics(False):
+                        raise RequiredArgumentMissingError(
+                            "--enable-control-plane-metrics cannot be used as a standalone flag. "
+                            "This flag must be used in conjunction with --enable-azure-monitor-metrics "
+                            "to enable control plane metrics collection. "
+                            "Usage: az aks create --enable-azure-monitor-metrics --name <cluster-name> "
+                            "--resource-group <cluster-resource-group> --enable-control-plane-metrics"
+                        )
+                # In update mode, azure monitor metrics must already be enabled on the cluster or being enabled now
+                if self.decorator_mode == DecoratorMode.UPDATE:
+                    is_metrics_enabled = (
+                        self.mc and
+                        hasattr(self.mc, "azure_monitor_profile") and
+                        self.mc.azure_monitor_profile and
+                        self.mc.azure_monitor_profile.metrics and
+                        getattr(self.mc.azure_monitor_profile.metrics, "enabled", False)
+                    )
+                    if not self._get_enable_azure_monitor_metrics(False) and not is_metrics_enabled:
+                        raise RequiredArgumentMissingError(
+                            "--enable-control-plane-metrics cannot be used as a standalone flag. "
+                            "This flag must be used in conjunction with --enable-azure-monitor-metrics "
+                            "to enable control plane metrics collection, or Azure Monitor Metrics must "
+                            "already be enabled on the cluster. "
+                            "Usage: az aks update --enable-azure-monitor-metrics --name <cluster-name> "
+                            "--resource-group <cluster-resource-group> --enable-control-plane-metrics"
+                        )
+        return enable_control_plane_metrics
+
+    def get_enable_control_plane_metrics(self) -> bool:
+        """Obtain the value of enable_control_plane_metrics.
+
+        :return: bool
+        """
+        return self._get_enable_control_plane_metrics(enable_validation=True)
+
+    def _get_disable_control_plane_metrics(self, enable_validation: bool = False) -> bool:
+        """Internal function to obtain the value of disable_control_plane_metrics.
+
+        :return: bool
+        """
+        disable_control_plane_metrics = self.raw_param.get("disable_control_plane_metrics")
+        if enable_validation:
+            if disable_control_plane_metrics and self._get_enable_control_plane_metrics(False):
+                raise MutuallyExclusiveArgumentError(
+                    "Cannot specify --enable-control-plane-metrics and "
+                    "--disable-control-plane-metrics at the same time"
+                )
+            if disable_control_plane_metrics:
+                # Control plane metrics can only be disabled if azure monitor metrics is enabled
+                is_metrics_enabled = (
+                    self.mc and
+                    hasattr(self.mc, "azure_monitor_profile") and
+                    self.mc.azure_monitor_profile and
+                    self.mc.azure_monitor_profile.metrics and
+                    getattr(self.mc.azure_monitor_profile.metrics, "enabled", False)
+                )
+                if not self._get_enable_azure_monitor_metrics(False) and not is_metrics_enabled:
+                    raise RequiredArgumentMissingError(
+                        "--disable-control-plane-metrics requires Azure Monitor Metrics to be enabled "
+                        "on the cluster. Enable it first with --enable-azure-monitor-metrics."
+                    )
+        return disable_control_plane_metrics
+
+    def get_disable_control_plane_metrics(self) -> bool:
+        """Obtain the value of disable_control_plane_metrics.
+
+        :return: bool
+        """
+        return self._get_disable_control_plane_metrics(enable_validation=True)
+
     def _get_enable_vpa(self, enable_validation: bool = False) -> bool:
         """Internal function to obtain the value of enable_vpa.
         This function supports the option of enable_vpa. When enabled, if both enable_vpa and enable_vpa are
@@ -7328,6 +7413,13 @@ class AKSManagedClusterCreateDecorator(BaseAKSManagedClusterDecorator):
             mc.azure_monitor_profile.metrics.kube_state_metrics = self.models.ManagedClusterAzureMonitorProfileKubeStateMetrics(  # pylint:disable=line-too-long
                 metric_labels_allowlist=str(ksm_metric_labels_allow_list),
                 metric_annotations_allow_list=str(ksm_metric_annotations_allow_list))
+            # set up control plane metrics if requested
+            enable_control_plane_metrics = self.context.raw_param.get("enable_control_plane_metrics")
+            disable_control_plane_metrics = self.context.raw_param.get("disable_control_plane_metrics")
+            if enable_control_plane_metrics:
+                mc.azure_monitor_profile.metrics.control_plane = self.models.ManagedClusterAzureMonitorProfileMetricsControlPlane(enabled=True)  # pylint:disable=line-too-long
+            elif disable_control_plane_metrics:
+                mc.azure_monitor_profile.metrics.control_plane = self.models.ManagedClusterAzureMonitorProfileMetricsControlPlane(enabled=False)  # pylint:disable=line-too-long
             # set intermediate
             self.context.set_intermediate("azuremonitormetrics_addon_enabled", True, overwrite_exists=True)
         return mc
@@ -9268,6 +9360,17 @@ class AKSManagedClusterUpdateDecorator(BaseAKSManagedClusterDecorator):
             if mc.azure_monitor_profile is None:
                 mc.azure_monitor_profile = self.models.ManagedClusterAzureMonitorProfile()
             mc.azure_monitor_profile.metrics = self.models.ManagedClusterAzureMonitorProfileMetrics(enabled=False)
+
+        # handle control plane metrics enable/disable independently
+        enable_control_plane_metrics = self.context.get_enable_control_plane_metrics()
+        disable_control_plane_metrics = self.context.get_disable_control_plane_metrics()
+        if enable_control_plane_metrics or disable_control_plane_metrics:
+            if mc.azure_monitor_profile is None:
+                mc.azure_monitor_profile = self.models.ManagedClusterAzureMonitorProfile()
+            if mc.azure_monitor_profile.metrics is None:
+                mc.azure_monitor_profile.metrics = self.models.ManagedClusterAzureMonitorProfileMetrics(enabled=True)
+            mc.azure_monitor_profile.metrics.control_plane = self.models.ManagedClusterAzureMonitorProfileMetricsControlPlane(  # pylint:disable=line-too-long
+                enabled=bool(enable_control_plane_metrics))
 
         if (
             self.context.raw_param.get("enable_azure_monitor_metrics") or
